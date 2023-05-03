@@ -1,2 +1,4 @@
-# youtube-downloader-gui
-Youtube Downloader with simple GUI created using Tkinter package on python, supported by pytube, required FFMPEG to operate
+# Youtube Downloader
+Youtube Downloader is a simple GUI used for code practice purpose using Tkinter package on Python, supported by Pytube package, required FFMPEG to operate.
+
+#### More Details Coming Soon...
