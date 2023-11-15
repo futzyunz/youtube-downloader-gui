@@ -4,28 +4,29 @@ import eyed3
 import os
 import subprocess
 import threading
+import traceback
 
 # == List of functions ==
-# defining a function to create a new thread
+# defining function to create a new thread
 def new_submit():
     threading.Thread(target=submit).start()
 
 # defining an empty function
 def empty_event():
-   pass
+    pass
 
-# defining a function to close/destroy window
+# defining function to close/destroy window
 def close_win():
-   window.destroy()
+    window.destroy()
    
-# defining a function to enable/disable window close button
+# defining function to alter enable/disable close window to default close button
 def close_event(value):
     if value==False:
         window.protocol("WM_DELETE_WINDOW", empty_event)
     else:
         window.protocol("WM_DELETE_WINDOW", close_win)
         
-# defining a function to lock operations
+# defining function to lock operations(disable buttons, fields and close window)
 def lock_event(value):
     if value==True:
         btn_submit.config(state=tk.DISABLED)
@@ -33,6 +34,8 @@ def lock_event(value):
         for i in entrylist:
             i.config(state=tk.DISABLED)
         for i in radiolist:
+            i.config(state=tk.DISABLED)
+        for i in spinboxlist:
             i.config(state=tk.DISABLED)
         checkbox.config(state=tk.DISABLED)
         close_event(not value)
@@ -43,24 +46,25 @@ def lock_event(value):
             i.config(state=tk.NORMAL)
         for i in radiolist:
             i.config(state=tk.NORMAL)
+        for i in spinboxlist:
+            i.config(state=tk.NORMAL)
         checkbox.config(state=tk.NORMAL)
         close_event(not value)
 
-# defining a function that will clear the entry fields
+# defining function to clear the entry fields
 def clear():
-    url_var.set("")
-    title_var.set("")
-    artist_var.set("")
-    album_var.set("")
+    for i in entries:
+        i.set("")
 
     status_var.set("")
-    #type_var.set("1")
-    trim_var.set("0")
-    start_var.set("")
-    end_var.set("")
+    #type_var.set(1)
+    trim_var.set(0)
+
+    for i in spinboxes:
+        i.set(0)
     unlock()
 
-# defining a function that will get all the entry fields
+# defining function that will get all the entry fields
 def submit():
     try:
         value=True
@@ -74,41 +78,31 @@ def submit():
         videotype=type_var.get()
         trim=trim_var.get()
 
-        if trim:
-            start=start_var.get()
-            end=end_var.get()
+        if trim_var.get()==1:
+            limit_length()
 
-        if videotype=="1":
-            if url=="" or title=="" or artist=="" or album=="":
-                label_status.config(fg="red")
-                status_var.set("Please fill in all fields")
-                lock_event(False)
-                unlock()
-                return
+        # check for empty fields
+        if videotype==1:
+            if url=="" or title=="" or artist=="" or album=="":                
+                raise AttributeError
         else:
             if url=="" or title=="":
-                label_status.config(fg="red")
-                status_var.set("Please fill in all fields")
-                lock_event(False)
-                unlock()
-                return
+                raise AttributeError
 
         status_var.set("Reading from URL...")
         # read youtube url
         yt = YouTube(url)
-        if videotype=="1":
+        if videotype==1:
             # extract audio from youtube video
             video = yt.streams.get_audio_only()
-            # old code:
-            # yt.streams.filter(only_audio=True).first()
 
-        elif videotype=="2":
+        elif videotype==2:
             # extract video from youtube video
             video = yt.streams.filter(only_video=True).order_by('resolution').desc().first()
 
-        elif videotype=="3":
+        elif videotype==3:
             # extract mp4 from youtube video, progressive video up to 720p resolution
-            video = yt.get_highest_resolution()
+            video = yt.streams.get_highest_resolution()
             # old code:
             # video = yt.streams.filter(progressive=True,file_extension='mp4')
             # .order_by('resolution').desc().first()           
@@ -122,12 +116,12 @@ def submit():
         os.replace(out_file, renamed_file)
         new_file = renamed_file
 
-        if videotype=="1":
+        if videotype==1:
             new_file = title + ".mp3"
             status_var.set("Processing Audio...")
             # Convert the file using ffmpeg into 320 bitrate(adjustable) mp3
-            audconv = ['ffmpeg','-i',renamed_file,'-b:a','320k',new_file]
-            subprocess.run(audconv)
+            audconv = ['ffmpeg','-loglevel','quiet','-i',renamed_file,'-b:a','320k',new_file]
+            subprocess.run(audconv,shell=True)
 
             process(new_file, artist, album, title)
             os.remove(renamed_file)
@@ -137,13 +131,15 @@ def submit():
         # trim '-ss',start,'-to',end
         if trim:
             status_var.set("Trimming...")
-            audconv = ['ffmpeg']
-            if start!="":
-                audconv.extend(['-ss',start])
-            if end!="":
-                audconv.extend(['-to',end])
+            audconv = ['ffmpeg','-loglevel','quiet']
+            readspinboxes = [i.get() for i in spinboxes]
+            start = ":".join(readspinboxes[:3])
+            end = ":".join(readspinboxes[3:])
+            
+            audconv.extend(['-ss',start])
+            audconv.extend(['-to',end])
             audconv.extend(['-i',new_file,'-c','copy','1'+new_file])
-            subprocess.run(audconv)
+            subprocess.run(audconv,shell=True)
             os.remove(new_file)
             os.replace('1'+new_file, new_file)
 
@@ -156,12 +152,20 @@ def submit():
             except Exception:
                 os.chdir(os.path.join(os.environ["USERPROFILE"], "OneDrive/Desktop"))
                 
-        os.rename(os.path.join(current_path, new_file), os.path.join(os.getcwd(), os.path.join(new_file)))
+        os.rename(os.path.join(current_path, new_file), os.path.join(os.getcwd(), new_file))
         lock_event(value)
         clear()
         status_var.set("Done")
-            
-    except:
+
+    # Exception happens when there's an empty field
+    except AttributeError:
+        label_status.config(fg="red")
+        status_var.set("Please fill in all fields")
+        lock_event(False)
+        unlock()
+
+    # Other exceptions
+    except:            
         label_status.config(fg="red")
         status_var.set("An Error Occured!")
         lock_event(False)
@@ -179,10 +183,72 @@ def process(file, artist, album, title):
     audiofile.tag.album=u""+album
     audiofile.tag.save()
 
+# defining function to update video length
+def set_video_length():
+    try:
+        length = YouTube(url_var.get()).length
+        hrs = length // 60 // 60
+        mins = length // 60 % 60
+        secs = length % 60
+
+        end_hr_var.set(hrs)
+        end_min_var.set(mins)
+        end_sec_var.set(secs)
+
+        # Defining global variables to set maximum hours, minutes and seconds of video
+        global maxhr, maxmin, maxsec
+        maxhr = hrs
+        maxmin = mins
+        maxsec = secs
+        
+        if hrs == 0:
+            spinboxlist[0].config(state=tk.DISABLED)
+            spinboxlist[3].config(state=tk.DISABLED)
+            
+            if mins == 0:
+                spinboxlist[1].config(state=tk.DISABLED)
+                spinboxlist[4].config(state=tk.DISABLED)
+
+    except:
+        label_status.config(fg="red")
+        status_var.set("Please input a valid URL!")
+        for i in spinboxlist:
+            i.config(state=tk.DISABLED)
+        trim_var.set(0)
+
+# defining function to limit video length input
+def limit_length():
+    readspinboxes = [int(i.get()) for i in spinboxes]
+    if readspinboxes[3] == 0 and readspinboxes[4] == 0 and readspinboxes[5] <= 1:
+        spinboxes[5].set(1)
+        
+    if readspinboxes[3] >= maxhr:
+        spinboxes[3].set(maxhr)
+        
+        if readspinboxes[4] >= maxmin:
+            spinboxes[4].set(maxmin)
+            
+            if readspinboxes[5] >= maxsec:
+                spinboxes[5].set(maxsec)
+    
+    if readspinboxes[3] >= 0:
+        if readspinboxes[0] > readspinboxes[3]:
+            spinboxes[0].set(readspinboxes[3])
+
+        elif readspinboxes[0] == readspinboxes[3]:
+            if readspinboxes[4] > 0:
+                if readspinboxes[1] > readspinboxes[4]:
+                    spinboxes[1].set(readspinboxes[4])
+
+                elif readspinboxes[1] == readspinboxes[4]:
+                    if readspinboxes[5] > 0:
+                        if readspinboxes[2] >= readspinboxes[5]:
+                            spinboxes[2].set(readspinboxes[5]-1)
+        
 # defining a function to disable/enable entries
 def unlock():
     videotype=type_var.get()
-    if videotype == "1":
+    if videotype == 1:
         entrylist[2].config(state=tk.NORMAL)
         entrylist[3].config(state=tk.NORMAL)
     else:
@@ -191,24 +257,26 @@ def unlock():
 
     trim=trim_var.get()
     if trim:
-        entrylist[4].config(state=tk.NORMAL)
-        entrylist[5].config(state=tk.NORMAL)
+        for i in spinboxlist:
+            i.config(state=tk.NORMAL)
+        set_video_length()
     else:
-        entrylist[4].config(state=tk.DISABLED)
-        entrylist[5].config(state=tk.DISABLED)
+        for i in spinboxlist:
+            i.config(state=tk.DISABLED)
 
 # == Main Application ==
 # Create a new non-resizeable window with a title
 window = tk.Tk()
-# Hide Window
-window.withdraw()
-window.title("Youtube Downloader by FutzYunz v1.3")
+window.title("Youtube Downloader by FutzYunz v1.35")
 window.resizable(False, False)
 
-# Initially positions tkinter window at the center (redundant code)
+# Hide Window
+window.withdraw()
+
+# Initially positions tkinter window at the center
+# (Failed as redundant code since widget objects haven't been created yet atm)
 pos_x = int((window.winfo_screenwidth()/2) - (window.winfo_width()/2))
 pos_y = int((window.winfo_screenheight()/2) - (window.winfo_height()/2))
-
 window.geometry(f'+{pos_x}+{pos_y}')
 
 # Create a new frame `frm_form` to contain the Label
@@ -216,6 +284,13 @@ window.geometry(f'+{pos_x}+{pos_y}')
 frm_form = tk.Frame(relief=tk.SUNKEN, borderwidth=3)
 # Pack the frame into the window
 frm_form.pack()
+
+# Configure the grid column weight
+frm_form.columnconfigure(1, weight=3)
+frm_form.columnconfigure(2, weight=1)
+frm_form.columnconfigure(3, weight=3)
+frm_form.columnconfigure(4, weight=1)
+frm_form.columnconfigure(5, weight=3)
 
 # List of field labels
 labels = [
@@ -239,28 +314,29 @@ entries = [
 ]
 
 # RadioButton and CheckboxButton variables
-type_var = tk.StringVar(frm_form, "1")
+type_var = tk.IntVar(frm_form, 1)
 trim_var = tk.IntVar()
 
 entrylist=[]
 radiolist=[]
+spinboxlist=[]
 
 # Loop over the list of field labels
 for idx, text in enumerate(labels):
     # Create a Label widget with the text from the labels list
     label = tk.Label(master=frm_form, text=text)
     # Create an Entry widget
-    entry = tk.Entry(master=frm_form, width=50, textvariable=entries[idx])
+    entry = tk.Entry(master=frm_form, textvariable=entries[idx])
     entrylist.append(entry)
     # Use the grid geometry manager to place the Label and
     # Entry widgets in the row whose index is idx
     label.grid(row=idx, column=0, sticky="E")
-    entry.grid(row=idx, column=1, columnspan=3)
+    entry.grid(row=idx, column=1, columnspan=5, sticky="EW")
 
 # Dictionary to create multiple buttons
-values = {"Audio Only" : "1",
-          "Video Only" : "2",
-          "Audio + Video" : "3"}
+values = {"Audio Only" : 1,
+          "Video Only" : 2,
+          "Audio + Video" : 3}
 
 # Create multiple Radiobuttons
 label = tk.Label(master=frm_form, text="Type:")
@@ -269,12 +345,12 @@ for (text, value) in values.items():
     radio = tk.Radiobutton(master=frm_form, text=text, variable=type_var,
                 value=value, command=unlock)
     radiolist.append(radio)
-    radio.grid(row=4, column=int(value))
+    radio.grid(row=4, column=value*2-1, sticky="W", ipadx=5)
 
 # Create a Checkbox widget
 checkbox = tk.Checkbutton(master=frm_form, text="Trim (hh:mm:ss)",
                           variable=trim_var, command=unlock)
-checkbox.grid(row=5, column=1, sticky="W", columnspan=3)
+checkbox.grid(row=5, column=1, sticky="W")
 
 # List of field labels
 labels = [
@@ -284,22 +360,36 @@ labels = [
 
 # List of field entries in format [hh:mm:ss]
 # example: 00:14:20
-start_var = tk.StringVar()
-end_var = tk.StringVar()
+# Spinbox variables
+start_hr_var = tk.StringVar(value=0)
+start_min_var = tk.StringVar(value=0)
+start_sec_var = tk.StringVar(value=0)
+end_hr_var = tk.StringVar(value=0)
+end_min_var = tk.StringVar(value=0)
+end_sec_var = tk.StringVar(value=0)
 
-entries = [start_var,end_var]
+spinboxes = [start_hr_var, start_min_var, start_sec_var,
+           end_hr_var, end_min_var, end_sec_var]
 
 # Loop over the list of field labels
 for idx, text in enumerate(labels):
     # Create a Label widget with the text from the labels list
     label = tk.Label(master=frm_form, text=text)
-    # Create an Entry widget
-    entry = tk.Entry(master=frm_form, width=50, textvariable=entries[idx])
-    entrylist.append(entry)
-    # Use the grid geometry manager to place the Label and
+    for i in range(idx*3, idx*3+3):
+        # Create a Spinbox widget with min and max value
+        spinbox = tk.Spinbox(master=frm_form, from_=0, to=59,
+                             textvariable=spinboxes[i], wrap=True, command=limit_length, vcmd=limit_length)
+        spinboxlist.append(spinbox)
+        spinbox.grid(row=6+idx, column=(i%3)*2+1, sticky="EW")
+
+        if not i == idx*3+2:
+            templabel = tk.Label(master=frm_form, text=":")
+            templabel.grid(row=6+idx, column=(i%3)*2+2, sticky="EW", ipadx=5)
+        
+    # Use the grid geometry manager to place the Spinbox, Label and
     # Entry widgets in the row whose index is idx
     label.grid(row=6+idx, column=0, sticky="E")
-    entry.grid(row=6+idx, column=1, columnspan=3)
+
 
 # Create a new frame `frm_buttons` to contain the
 # Submit and Clear buttons. This frame fills the
@@ -326,19 +416,19 @@ btn_submit.pack(side=tk.RIGHT, padx=10, ipadx=10)
 btn_clear = tk.Button(master=frm_buttons, text="Clear", command=clear)
 btn_clear.pack(side=tk.RIGHT, ipadx=10)
 
-# Freeze the trim function at the beginning
-entrylist[4].config(state=tk.DISABLED)
-entrylist[5].config(state=tk.DISABLED)
+# Disable the trim input entry at the beginning while program loads
+for i in spinboxlist:
+    i.config(state=tk.DISABLED)
 
 # Positions the tkinter window correctly at the center of display
 window.update()
 
 pos_x = int((window.winfo_screenwidth()/2) - (window.winfo_width()/2))
 pos_y = int((window.winfo_screenheight()/2) - (window.winfo_height()/2))
-
 window.geometry(f'+{pos_x}+{pos_y}')
-# Show hidden window
+
+# Display hidden window
 window.deiconify()
 
-# Start the application
+# Start the main application
 window.mainloop()
